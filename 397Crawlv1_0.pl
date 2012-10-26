@@ -34,7 +34,6 @@ sub ScanDirectory {
 	foreach my $name (@names){ 
 		next if ($name eq "."); 
 		next if ($name eq ".."); 
-
 		if (-d $name){ 		# Is the given name a directory?
 			print  "Found directory:   $name in $workdir!\n"; 
 			&ScanDirectory($name); 
@@ -55,9 +54,11 @@ sub ScanDirectory {
 			}
 		}
 		else {				# Is the given name something else?
-			print "Found some unknown file:      $name\n";
+			print "Found some unknown file:     $name\n";
 		}
 	}
-	chdir($startdir) or die "Unable to change to dir $startdir:$!\n"; 
+	print "Exiting directory: $workdir\n";
+	chdir("..") or die "Unable to change to dir $startdir:$!\n"; 
+	
 }
  

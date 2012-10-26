@@ -1,59 +1,53 @@
 #!/usr/bin/perl -w
 # $Rev: 11 $
-# $Author: artem $
-# $Date: 2009-05-23 23:09:47 -0700 (Sat, 23 May 2009) $
+# $Author: Thomas Reese $
+# $Date: 2012-10-24 $
+# $Version updated to use rottentomatoes API $
 
-# http://beerpla.net/2008/03/27/parsing-json-in-perl-by-example-southparkstudioscom-south-park-episodes/
- 
-# use WWW::Mechanize;
 use JSON -support_by_pp;
 use strict;
-# use LWP::Simple;
 use LWP::UserAgent;
 use Data::Dumper;
 
-# my $titleIn="Avatar";
+my $titleIn="Avatar";
 # if ($argv[0]) $titleIn=$argv[0];
 my $ua = new LWP::UserAgent;
+my $apikey = "rfbnqr2xpkahkypty6m6r3ee";
 $ua->timeout(120); 
-#fetch_json_page("http://www.omdbapi.com/?i=&t=Avatar");
 
 for (my $i = 0; $i<$#ARGV+1; $i++) {
-	 print $ARGV[$i]."\n";
-	fetch_title($ARGV[$i]);
+	print $ARGV[$i]."\n";
+	fetch_title("$ARGV[$i]");
 }
 
 sub fetch_title
 {
 	my $titleIn = @_;
-	my $url = "http://www.omdbapi.com/?i=&t=".$titleIn;
-	fetch_json_page($url);
+	# my $url = "http://www.omdbapi.com/?i=&t=".$titleIn; #Old API
+	my $mainUrl = "http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=".$apikey;
+	# fetch_json_page($mainUrl."&q=".$titleIn);
+	fetch_json_page($mainUrl."&q="."Avatar"."&page_limit=1");
 }
 
 sub fetch_json_page
 {
 	my ($json_url) = @_;
-	# my $browser = WWW::Mechanize->new();
+	print 
 	# my $cmd = "curl $json_url";
 	my $request = new HTTP::Request('GET', $json_url); 
 	my $response = $ua->request($request);
 	my $movieData = $response->content();
-	# my $movieData = system($cmd);
-	print $movieData."\n\n"; #stringReturned
+	#print $movieData."\n\n"; #stringReturned
   
 	# download the json page:
 	print "Getting json $json_url\n\n";
-	# $browser->get( $json_url );
-	# my $content = $browser->content();
+		# $browser->get( $json_url );
+		# my $content = $browser->content();
 	my $json = new JSON;
 	print $json."\n\n";
 	# these are some nice json options to relax restrictions a bit:
 	my $data = $json->allow_nonref->utf8->relaxed->escape_slash->loose->allow_singlequote->allow_barekey->decode($movieData);
 
-	# my $title = escapeSingleQuote($data->{"Title"});
-	# my $year = escapeSingleQuote($data->{Year});
-	# my $rated = escapeSingleQuote($data->{Rated});
-	# print $title.$year.$rated;
 	print Dumper $data;
 	print keys $data;
 	print $data->{'Title'}."\n";
