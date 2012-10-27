@@ -1,23 +1,25 @@
 #!/usr/bin/perl -s 
+# $Author: Thomas Reese $
+# $Date: 2012-10-27 $
 
-# note the use of -s for switch processing. Under NT/2000, you will need to 
-# call this script explicitly with -s (i.e., pen l -s script) if you do not 
-# have perl file associations in place. 
-# -s is also considered 'retro', many programmers prefer to load 
-# a separate module (from the Getopt:: family) for switch parsing. 
-
-# Following line can be used to keep a log
-#open FILES, ">", "files.txt" or die $!; open DIRECTORIES, ">", "directories.txt" or die $!; 
 use Cwd;
+use Image::ExifTool qw(:Public); # Needs to be installed
 @videoTypes = (".avi",".mp4",".mkv",".mov",".wmv",".flv");
+%videoTypesMap = map { $_ => 1 } @videoTypes;
 @audioTypes = (".wav",".mp3",".flac",".midi",".aac",".m4a",".mp4");
+%audioTypesMap = map { $_ => 1 } @audioTypes;
 @imageTypes = (".gif",".jpg",".jpeg",".png",".ico",".bmp",".m4a",".mp4");
+%imageTypesMap = map { $_ => 1 } @imageTypes;
 @acceptedTypes = (@videoTypes,@audioTypes,@imageTypes);
 %acceptedTypesMap = map { $_ => 1 } @acceptedTypes;
 
 if (1>=$#ARGV+1) {
 	chdir($ARGV[0]);
 	&ScanDirectory($ARGV[0]);
+}
+else {
+	chdir(".");
+	&ScanDirectory(".");
 }
 
 # This function takes the name of a directory and recursively scans down the filesystem hierarchy
@@ -48,6 +50,21 @@ sub ScanDirectory {
 			if(exists($acceptedTypesMap{$ext})) {
 				print "Found acceptable media file: $name in $workdir!\n";
 				# TODO: Send files to appropriate parsing scripts and online syncs
+				# http://owl.phy.queensu.ca/~phil/exiftool/
+				# if (Win32::File::GetAttributes(&cwd."/".$name, $attrib)) {
+					# print $attrib, $/;
+				# }
+				
+				my $info = ImageInfo($name);
+				foreach (keys %$info) {
+					print "$_ => $$info{$_}\n";
+				}
+				if(exists($videoTypesMap{$ext})) {
+					print "\nAnalyzing File - $name\n";
+					$name =~ s/\s/%20/g;
+					$name = substr($name,0,rindex($name,$ext));
+					system('perl C:/Git/397Scripts/397Scriptv1.3.pl '.$name);
+				}
 			}
 			else {
 				print "Found unmatched file:        $name in $workdir!\n";
@@ -59,6 +76,5 @@ sub ScanDirectory {
 	}
 	print "Exiting directory: $workdir\n";
 	chdir("..") or die "Unable to change to dir $startdir:$!\n"; 
-	
 }
  
