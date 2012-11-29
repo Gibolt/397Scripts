@@ -48,16 +48,18 @@ sub ScanDirectory {
 			my $info = ImageInfo($name);
 			my $ext = '';
 			if ($info->{'FileType'}) {
-				$ext = $info->{'FileType'};
+				$ext = lc($info->{'FileType'});
 			}
 			elsif ($name =~ /\.([^.]+)$/) {
-				$ext = $1;
+				$ext = lc($1);
 			}
 			#my $info = ImageInfo($name);
 			#print "FileType => $$info{'FileType'}\n";
+			print $ext;
 			my $fullPath = $startdir.'/'.$workdir.'/'.$name;
 			if(exists($acceptedTypesMap{$ext})) {
 				print "Found acceptable media file: $name in $workdir!\n";
+				$name = substr($name,0,rindex($name,$ext));
 				my $info = ImageInfo($name);
 				foreach (keys %$info) {
 					print "$_ => $$info{$_}\n";
@@ -65,8 +67,7 @@ sub ScanDirectory {
 				if(exists($videoTypesMap{$ext})) {
 					print "\nAnalyzing Video File - $name\n";
 					$name =~ s/\s/%20/g;
-					# $name = substr($name,0,rindex($name,$ext));
-					# system('perl C:/Git/397Scripts/apiSearch.pl '.$name);
+					system('perl C:/Git/397Scripts/apiSearch.pl '.$name);
 				}
 				elsif(exists($audioTypesMap{$ext})) {
 					# my $id3Info = Music::Tag->new($name);
@@ -74,8 +75,9 @@ sub ScanDirectory {
 					# print Dumper $id3Info;
 					print "\nAnalyzing Audio File - $name\n";
 					$name =~ s/\s/%20/g;
-					$name = substr($name,0,rindex($name,$ext));
+					# $name = substr($name,0,rindex($name,$ext));
 					my $songTitle = $info->{"Title"};
+					if (not $songTitle) {$songTitle = $name;}
 					my $songArtist = $info->{"Artist"};
 					my $songAlbum = $info->{"Album"};
 					print "Title,Artist,Album",$songTitle, $songArtist, $songAlbum;
@@ -83,7 +85,7 @@ sub ScanDirectory {
 				}
 				elsif(exists($imageTypesMap{$ext})) {
 					print "\nAnalyzing Image File - $name\n";
-					$name =~ s/\s/%20/g;
+					# $name =~ s/\s/%20/g;
 				}
 			}
 			else {
