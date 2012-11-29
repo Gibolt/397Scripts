@@ -60,10 +60,24 @@ sub fetch_xml_page {
   
 	print $musicData."\n";
 	my $data = $xs1->XMLin($musicData);
-	print Dumper $data;
-	print "\n\n";
-	print Dumper $data->{'recording-list'};
-	print "\n\n";
+	# print Dumper $data;
+	# print "\n\n";
 	print Dumper $data->{'recording-list'}->{'recording'};
 	$data = $data->{'recording-list'}->{'recording'};
+	
+	my $recordingTitle = $data->{'title'};
+	my $recordingId = $data->{'id'};
+	
+	my $artist = $data->{'artist-credit'}->{'name-credit'}->{'artist'};
+	my $artistName = $artist->{'name'};
+	my $artistId = $artist->{'id'};
+	
+	my $release = $data-> {'release-list'}->{'release'};
+	my $releaseDate = $release->{'date'};
+	my $releaseTitle = $release->{'title'};
+	my $releaseId = $release->{'id'};
+	my $releaseTrack = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'number'};
+	my $releaseTracks = $release->{'medium-list'}->{'track-count'};
+	# my $releaseTrackTitle = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'title'};
+	my $releaseType = $release->{'id'};
 }
