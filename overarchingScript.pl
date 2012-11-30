@@ -20,7 +20,7 @@ my @imageTypes = ("gif","jpg","jpeg","png","ico","bmp");
 my %imageTypesMap = map { $_ => 1 } @imageTypes;
 my @acceptedTypes = (@videoTypes,@audioTypes,@imageTypes);
 my %acceptedTypesMap = map { $_ => 1 } @acceptedTypes;
-my $rtApikey = "rfbnqr2xpkahkypty6m6r3ee";
+my $rtApiKey = "rfbnqr2xpkahkypty6m6r3ee";
 my $tvdbApiKey = '064C9518B1E8731B';
 my $ua = new LWP::UserAgent;
 $ua->timeout(120); 
@@ -82,6 +82,7 @@ sub ScanDirectory {
 					      # || $workdir =~ /(season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*)/i) {
 					my $episodeNum;
 					my $seasonNum;
+					my $success;
 					my $tvString;
 					if ($workdir =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 						$seasonNum = $3;
@@ -108,8 +109,8 @@ sub ScanDirectory {
 						my $endFileName;
 						if ($name =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 							$title = substr($name,0,rindex($name,$1));
-							# $endFileName = substr($name,rindex($name,$1));;
 							$endFileName = substr($name,rindex($name,$1)+length($1));
+							# $endFileName = substr($name,rindex($name,$1));;
 						} else {
 							$title = $name;
 						}
@@ -120,43 +121,76 @@ sub ScanDirectory {
 							my $tvdb = WebService::TVDB->new(api_key => $tvdbApiKey, language => 'English', max_retries => 10);
 							my $series_list = $tvdb->search($title);
 							my $series = @{$series_list}[0];
-							$series->fetch();
-							$tvInfo = $series;
-						}
-						#my $series = $tvdb->getSeriesAll($title);
-						# Dumper($series_list);
-						# print Dumper($series);
-						my $showName = $tvInfo->{'SeriesName'};
-						my $showOverview = $tvInfo->{'Overview'};
-						my $showRating = $tvInfo->{'Rating'};
-						my $showAired = $tvInfo->{'FirstAired'};
-
-						my $episodeInfo;
-						for my $episode (@{ $tvInfo->episodes }){
-							if ($episode->{'SeasonNumber'} == $seasonNum
-							 && $episode->{'EpisodeNumber'} == $episodeNum ) {
-								$episodeInfo = $episode;
-								last;
+							if ($series) {
+								$series->fetch();
+								$tvInfo = $series;
 							}
 						}
-						my $episodeName = $episodeInfo->{'EpisodeName'};
-						my $episodeId = $episodeInfo->{'id'};
-						my $episodeRating = $episodeInfo->{'Rating'};
-						my $episodeOverview = $episodeInfo->{'Overview'};
-						my $episodeAired = $episodeInfo->{'FirstAired'};
-						my $episodeImage = $episodeInfo->{'filename'};
-						
-						print "Show:$showName+Episode:$episodeName+S$seasonNum E$episodeNum\n";
-						# for my $episode (@{ $series->episodes }){
-						  # # $episode is a WebService::TVDB::Episode
-						  # CORE::say $episode->Overview;
-						  # CORE::say $episode->FirstAired;
-						# }
-						# CoverArt is 'http://thetvdb.com/banners/'.$series->{'filename'};
-						
+						if ($tvInfo) {
+							#my $series = $tvdb->getSeriesAll($title);
+							# Dumper($series_list);
+							# print Dumper($series);
+							$success = 1;
+							my $showName = $tvInfo->{'SeriesName'};
+							my $showOverview = $tvInfo->{'Overview'};
+							my $showRating = $tvInfo->{'Rating'};
+							my $showAired = $tvInfo->{'FirstAired'};
+
+							my $episodeInfo;
+							for my $episode (@{ $tvInfo->episodes }){
+								if ($episode->{'SeasonNumber'} == $seasonNum
+								 && $episode->{'EpisodeNumber'} == $episodeNum ) {
+									$episodeInfo = $episode;
+									last;
+								}
+							}
+							my $episodeName = $episodeInfo->{'EpisodeName'};
+							my $episodeId = $episodeInfo->{'id'};
+							my $episodeRating = $episodeInfo->{'Rating'};
+							my $episodeOverview = $episodeInfo->{'Overview'};
+							my $episodeAired = $episodeInfo->{'FirstAired'};
+							my $episodeImage = $episodeInfo->{'filename'};
+							
+							print "Show:$showName+Episode:$episodeName+S$seasonNum E$episodeNum\n";
+							# for my $episode (@{ $series->episodes }){
+							  # # $episode is a WebService::TVDB::Episode
+							  # CORE::say $episode->Overview;
+							  # CORE::say $episode->FirstAired;
+							# }
+							# CoverArt is 'http://thetvdb.com/banners/'.$series->{'filename'};
+						}
 					}
-					else {
-						print "Failed to process video file : $filename\n";
+					if (not $success) { 	# Search as if it is a movie using Rotten Tomatoes
+						# my $name = $_[0];
+						$name =~ s/(%20|\s|-|_)+/ /g;
+						# Check out Thetvdb.com for tv shows
+						my $mainUrl = "http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=".$rtApiKey;
+						my $json_url = $mainUrl."&q="."$name"."&page_limit=1";
+						my $response = $ua->request(new HTTP::Request('GET', $json_url));
+						# my $request = new HTTP::Request('GET', $json_url); 
+						# my $response = $ua->request($request);
+						my $movieData = $response->content();
+					  
+						my $json = new JSON;
+						my $data = $json->allow_nonref->utf8->relaxed->escape_slash->loose->allow_singlequote->allow_barekey->decode($movieData);
+						print "$json_url\n";
+						# print Dumper $data;				
+						if (($data -> {'total'}) > 0) {
+							$success = 1;
+							# print $data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'};
+							# print "\n";
+								# Fetch movie posters
+							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'profile'}, "profile.jpg");
+							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'detailed'}, "detailed.jpg");
+							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'thumbnail'}, "thumbnail.jpg");
+							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'original'}, "original.jpg");
+							# fetch_imdb_page($data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'}); 
+							print "Successfully connected to movie information for $name\n";
+						}
+
+					}
+					if (not $success) { 	# Failed to find TV and Movie results
+						print "Failed to process video file : $filename\n$success\n";
 					}
 					# system('perl C:/Git/397Scripts/apiSearch.pl '.$name);
 				}
