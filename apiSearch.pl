@@ -25,7 +25,7 @@ sub fetch_title {
 	print $titleIn ;
 	# Check out Thetvdb.com for tv shows
 	my $mainUrl = "http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=".$apikey;
-	# fetch_rt_page($mainUrl."&q="."$titleIn"."&page_limit=1");
+	fetch_rt_page($mainUrl."&q="."$titleIn"."&page_limit=1");
 	# fetch_imdb_page($titleIn);
 }
 
