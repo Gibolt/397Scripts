@@ -63,16 +63,25 @@ sub ScanDirectory {
 			my $info = ImageInfo($name);
 			#print "FileType => $$info{'FileType'}\n";
 			my $ext = '';
+			my $filenameExt;
 			if ($info->{'FileType'}) {
 				$ext = lc($info->{'FileType'});
 				print "Ext: $ext";
 			}
-			elsif ($name =~ /\.([^.]+)$/) {
-				$ext = lc($1);
+			if ($name =~ /\.([^.]+)$/) {
+				$filenameExt = lc($1);
+				if (not $ext) $ext = lc($1);
 			}
+			my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
 			$name = substr($name,0,rindex($name,$ext)-1);
 			my $filename = $name =~ s/[\s\.\_\-\[\]\\\/]+/ /g;
-			# my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
+			my $insertIntoImageTableString;
+			my $insertIntoAudioFileDetailsTableString;
+			my $insertIntoVideoFileDetailsTableString;
+			my $insertIntoMovieDetailsTableString;
+			my $insertIntoRTSearchTableString;
+			my $insertIntoPosterTableString;
+			my $insertIntoImageTableString;
 			if(exists($acceptedTypesMap{$ext})) {
 				print "Found acceptable media file: $name in $workdir!\n";
 				if(exists($videoTypesMap{$ext})) {
@@ -83,7 +92,7 @@ sub ScanDirectory {
 					my $episodeNum;
 					my $seasonNum;
 					my $success;
-					my $tvString;
+					my $determinedType="O";
 					if ($workdir =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 						$seasonNum = $3;
 						$episodeNum = $5;
@@ -158,6 +167,7 @@ sub ScanDirectory {
 							  # CORE::say $episode->FirstAired;
 							# }
 							# CoverArt is 'http://thetvdb.com/banners/'.$series->{'filename'};
+							$determinedType = "T";
 						}
 					}
 					if (not $success) { 	# Search as if it is a movie using Rotten Tomatoes
@@ -177,6 +187,8 @@ sub ScanDirectory {
 						# print Dumper $data;				
 						if (($data -> {'total'}) > 0) {
 							$success = 1;
+							$data = data->{'movies'}[0];
+							
 							# print $data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'};
 							# print "\n";
 								# Fetch movie posters
@@ -186,13 +198,23 @@ sub ScanDirectory {
 							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'original'}, "original.jpg");
 							# fetch_imdb_page($data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'}); 
 							print "Successfully connected to movie information for $name\n";
+							$determinedType = "M";
 						}
 
 					}
 					if (not $success) { 	# Failed to find TV and Movie results
 						print "Failed to process video file : $filename\n$success\n";
+						$determinedType = "V";
 					}
-					# system('perl C:/Git/397Scripts/apiSearch.pl '.$name);
+					my $duration;my $width;my $height;my $codec;my $audioRate;my $audioEncoding;my $frameRate;
+					if ($info->{'Duration'}) $duration=$info->{'Duration'};
+					if ($info->{'ImageHeight'}) $width=$info->{'ImageHeight'};
+					if ($info->{'ImageWidth'}) $height=$info->{'ImageWidth'};
+					if ($info->{'VideoCodec'}) $codec=$info->{'VideoCodec'};
+					if ($info->{'AudioSampleRate'}) $audioRate=$info->{'AudioSampleRate'};
+					if ($info->{'Encoding'}) $audioEncoding=$info->{'Encoding'};
+					if ($info->{'FrameRate'}) $frameRate=$info->{'FrameRate'};
+					$insertIntoVideoFileDetailsTableString = "Insert Into VideoFileDetails Values ('$fullPath','$duration',$width,$height,'$codec',$audioRate,'$audioEncoding','$frameRate');";
 				}
 				elsif(exists($audioTypesMap{$ext})) {
 					# my $id3Info = Music::Tag->new($name);
@@ -202,21 +224,83 @@ sub ScanDirectory {
 					$name =~ s/\s/%20/g;
 					$name = substr($name,0,rindex($name,$ext));
 					my $songTitle = $info->{"Title"};
+					if (not $songTitle) $songTitle = $name;
 					my $songArtist = $info->{"Artist"};
 					my $songAlbum = $info->{"Album"};
 					print "Title,Artist,Album",$songTitle, $songArtist, $songAlbum;
-					$songTitle ? system("perl C:/Git/397Scripts/musicApiSearch.pl \"$songTitle\" \"$songArtist\" \"$songAlbum\"") : system("perl C:/Git/397Scripts/musicApiSearch.pl \"$name\" \"$songArtist\" \"$songAlbum\"");
+
+					if ($songAlbum =~ /\Q$songTitle/) {$album=""};
+					$songTitle =~ s/%20|-|\s+/ /g;
+					$songTitle =~ s/&/%26/g;
+					my $queryUrl = "http://musicbrainz.org/ws/2/recording/?limit=1&query=";
+					my $queryUrl += "recording:\"$songTitle\"";
+					if ($songArtist) $queryUrl+= " AND artist:\"songArtist\"";
+					if ($songAlbum) $queryUrl+= " AND album:\"songAlbum\"";
+					print "Fetching data for file \"$songTitle\" to url \"$queryUrl\" :\n";
+
+					my $request = new HTTP::Request('GET', $queryUrl); 
+					my $response = $ua->request($request);
+					my $musicData = $response->content();
+				  
+					my $data = $xs1->XMLin($musicData);
+					if ($data->{'recording-list'}->{'count'} > 0) {
+						print Dumper $data->{'recording-list'}->{'recording'};
+						$data = $data->{'recording-list'}->{'recording'};
+						
+						my $recordingTitle = $data->{'title'};
+						my $recordingId = $data->{'id'};
+						
+						my $artist; my $artistName; my $artistId;
+						if($data->{'artist-credit'}) if ($data->{'artist-credit'}->{'name-credit'}) if ($data->{'artist-credit'}->{'name-credit'}->{'artist'}) $artist=$data->{'artist-credit'}->{'name-credit'}->{'artist'};						
+						if($artist) {
+							if($artist->{'name'}) $artistName = $artist->{'name'};
+							if($artist->{'id'})   $artistId   = $artist->{'id'};
+						}
+						
+						my $release = $data-> {'release-list'}->{'release'};
+						my $releaseDate = $release->{'date'};
+						my $releaseTitle = $release->{'title'};
+						my $releaseId = $release->{'id'};
+						my $releaseTrack = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'number'};
+						my $releaseTracks = $release->{'medium-list'}->{'track-count'};
+						# my $releaseTrackTitle = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'title'};
+						my $releaseType = $release->{'id'};
+						
+						$determinedType = "S"; # If song
+					}
+					else {
+						$determinedType = "A"; # If audio
+					}
+					my $bitRate;my $audioLayer;my $channelMode;my $sampleRate;my $duration;
+					if ($info->{'AudioBitrate'}) $bitRate=$info->{'AudioBitrate'};
+					if ($info->{'AudioLayer'}) $audioLayer=$info->{'AudioLayer'};
+					if ($info->{'ChannelMode'}) $channelMode=$info->{'ChannelMode'};
+					if ($info->{'SampleRate'}) $sampleRate=$info->{'SampleRate'};
+					if ($info->{'Duration'}) $duration=$info->{'Duration'};
+					$insertIntoAudioFileDetailsTableString = "Insert Into AudioFileDetails Values ('$fullPath','$bitRate','$audioLayer','$channelMode',$sampleRate,'$duration');";
+				
 				}
 				elsif(exists($imageTypesMap{$ext})) {
 					print "\nAnalyzing Image File - $name\n";
-					$name =~ s/\s/%20/g;
-					# $name = substr($name,0,rindex($name,$ext));
-					# system('perl C:/Git/397Scripts/apiSearch.pl '.$name);
+					my $interlace;my $imageHeight;my $imageWidth;my $imageSize;my $colorType;my $bitDepth;my $gamma;
+					if ($info->{'Interlace'}) $interlace=$info->{'Interlace'};
+					if ($info->{'ImageHeight'}) $imageHeight=$info->{'ImageHeight'};
+					if ($info->{'ImageWidth'}) $imageWidth=$info->{'ImageWidth'};
+					if ($info->{'ImageSize'}) $imageSize=$info->{'ImageSize'};
+					if ($info->{'ColorType'}) $colorType=$info->{'ColorType'};
+					if ($info->{'BitDepth'}) $bitDepth=$info->{'BitDepth'};
+					if ($info->{'Gamma'}) $gamma=$info->{'Gamma'};
+					$determinedType = "I";
+					$insertIntoImageTableString = "Insert Into Image Values ('$fullPath','$interlace',$imageHeight,$imageWidth,'$imageSize','$colorType','$bitDepth','$gamma');";
 				}
 			}
 			else {
 				print "Found unmatched file:        $name in $workdir!\n";
 			}
+			my $insertIntoFileTableString = "Insert into File ('$fullPath','$name',
+			'$determinedType','".$info->{'filesize'}."','$ext','$filenameExt');");
+			my $insertIntoOwnsTableString = "Insert into Owns ('$fullPath','$userName',
+			0,'',False,False,-1)";
 		}
 		else {				# Is the given name something else?
 			print "Found some unknown file:     $name\n";
