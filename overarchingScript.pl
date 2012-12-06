@@ -11,6 +11,10 @@ use LWP::Simple;
 use Data::Dumper;
 use IMDB::Film;
 use WebService::TVDB;
+use XML::Simple;
+use DBI;
+
+open (SQL, '>>sqlquery.sql');
 
 my @videoTypes = ("avi","mp4","mkv","mov","wmv","flv");
 my %videoTypesMap = map { $_ => 1 } @videoTypes;
@@ -24,13 +28,18 @@ my $rtApiKey = "rfbnqr2xpkahkypty6m6r3ee";
 my $tvdbApiKey = '064C9518B1E8731B';
 my $ua = new LWP::UserAgent;
 $ua->timeout(120); 
+my $xs1 = XML::Simple->new();
 my $localProgram;
 
-if (1>=$#ARGV+1) {
-	chdir($ARGV[0]);
-	$localProgram = $ARGV[1];
-	my $currentDir= $ARGV =~ /\/?([^\/]*)\/([^\/]*)$/;
-	&ScanDirectory($ARGV[0]);
+my $db_user  = "sa";
+my $db_pass  = "";
+my $dsn_name = 'dbi:ODBC:data\\MediaData';
+
+if ($#ARGV+1>=1) {
+	chdir($ARGV[1]);
+	$localProgram = $ARGV[0];
+	my $currentDir= $ARGV[1] =~ /\/?([^\/]*)\/([^\/]*)$/;
+	&ScanDirectory($ARGV[1]);
 }
 else {
 	chdir(".");
@@ -67,11 +76,10 @@ sub ScanDirectory {
 			my $filenameExt;
 			if ($info->{'FileType'}) {
 				$ext = lc($info->{'FileType'});
-				print "Ext: $ext";
 			}
 			if ($name =~ /\.([^.]+)$/) {
 				$filenameExt = lc($1);
-				if (not $ext) $ext = lc($1);
+				if (not $ext) {$ext = lc($1);}
 			}
 			my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
 			$name = substr($name,0,rindex($name,$ext)-1);
@@ -83,10 +91,10 @@ sub ScanDirectory {
 			my $insertIntoTvEpisodeTableString;
 			my $insertIntoAudioFileDetailsTableString;
 			my $insertIntoVideoFileDetailsTableString;
-			my $insertIntoMovieDetailsTableString;
-			my $insertIntoRTSearchTableString;
 			my $insertIntoPosterTableString;
-			my $insertIntoImageTableString;
+			my $determinedType="O";
+			# my $insertIntoMovieDetailsTableString;
+			# my $insertIntoRTSearchTableString;
 			if(exists($acceptedTypesMap{$ext})) {
 				print "Found acceptable media file: $name in $workdir!\n";
 				if(exists($videoTypesMap{$ext})) {
@@ -97,11 +105,9 @@ sub ScanDirectory {
 					my $episodeNum;
 					my $seasonNum;
 					my $success;
-					my $determinedType="O";
 					if ($workdir =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 						$seasonNum = $3;
 						$episodeNum = $5;
-						# print "S:$seasonNum E:$episodeNum";
 					}
 					elsif ($parentFolder =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 						$seasonNum = $3;
@@ -113,24 +119,17 @@ sub ScanDirectory {
 							if (not $seasonNum) {
 								$seasonNum = $3;
 							}
-							# print "S:$seasonNum E:$episodeNum";
 						}
 					}
-					# print " Season:$seasonNum";
 					if ($seasonNum) {
-						# $ARGV[$i] =~ s/[\s\.\_\-\[\]\\\/]+/ /g;
 						my $title; 
 						my $endFileName;
 						if ($name =~ /((season|s)?[\s\.\_\-\[\]\\\/]*(\d+)[\s\.\_\-\[\]\\\/]*(episode|ep|e)?[\s\.\_\-\[\]\\\/]*(\d*))/i) {
 							$title = substr($name,0,rindex($name,$1));
 							$endFileName = substr($name,rindex($name,$1)+length($1));
-							# $endFileName = substr($name,rindex($name,$1));;
 						} else {
 							$title = $name;
 						}
-						# print "Title:$title";
-						# my $title = substr($name,0,rindex($name,$ext)-1);
-						# $title =~ s/[\s\.\_\-\[\]\\\/]+/ /g;
 						if (not $tvInfo) {
 							my $tvdb = WebService::TVDB->new(api_key => $tvdbApiKey, language => 'English', max_retries => 10);
 							my $series_list = $tvdb->search($title);
@@ -141,9 +140,6 @@ sub ScanDirectory {
 							}
 						}
 						if ($tvInfo) {
-							#my $series = $tvdb->getSeriesAll($title);
-							# Dumper($series_list);
-							# print Dumper($series);
 							$success = 1;
 							my $showName = $tvInfo->{'SeriesName'};
 							my $showOverview = $tvInfo->{'Overview'};
@@ -159,14 +155,14 @@ sub ScanDirectory {
 								}
 							}
 							my $episodeName;my $episodeId;my $episodeRating;my $episodeOverview;my $episodeAired;my $episodeImage;
-							if ($info->{'EpisodeName'}) $episodeName=$episodeInfo->{'EpisodeName'};
-							if ($info->{'id'}) $episodeId=$episodeInfo->{'id'};
-							if ($info->{'Rating'}) $episodeRating=$episodeInfo->{'Rating'};
-							if ($info->{'Overview'}) $episodeOverview=$episodeInfo->{'Overview'};
-							if ($info->{'FirstAired'}) $episodeAired=$episodeInfo->{'FirstAired'};
+							if ($info->{'EpisodeName'}) {$episodeName=$episodeInfo->{'EpisodeName'};}
+							if ($info->{'id'}) {$episodeId=$episodeInfo->{'id'};}
+							if ($info->{'Rating'}) {$episodeRating=$episodeInfo->{'Rating'};}
+							if ($info->{'Overview'}) {$episodeOverview=$episodeInfo->{'Overview'};}
+							if ($info->{'FirstAired'}) {$episodeAired=$episodeInfo->{'FirstAired'};}
 							if ($info->{'filename'}) {
 								$episodeImage=$episodeInfo->{'filename'};
-								getstore("http://thetvdb.com/banners/".$episodeImage, $localProgram."/images/$episodeId".$Clip.".jpg");
+								getstore("http://thetvdb.com/banners/".$episodeImage, $localProgram."/images/$episodeId"."Clip.jpg");
 							}
 							
 							$insertIntoTvEpisodeTableString = "Insert into TvEpisode Values('$fullPath','$seasonNum','$episodeNum',
@@ -176,35 +172,33 @@ sub ScanDirectory {
 						}
 					}
 					if (not $success) { 	# Search as if it is a movie using Rotten Tomatoes
-						# my $name = $_[0];
-						$name =~ s/(%20|\s|-|_)+/ /g;
 						# Check out Thetvdb.com for tv shows
+						$name =~ s/(%20|\s|-|_)+/ /g;
 						my $mainUrl = "http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=".$rtApiKey;
 						my $json_url = $mainUrl."&q="."$name"."&page_limit=1";
 						my $response = $ua->request(new HTTP::Request('GET', $json_url));
 						my $movieData = $response->content();
 					  
 						my $json = new JSON;
-						my $data = $json->allow_nonref->utf8->relaxed->escape_slash->loose->allow_singlequote->allow_barekey->decode($movieData);
-						print "$json_url\n";				
+						my $data = $json->allow_nonref->utf8->relaxed->escape_slash->loose->allow_singlequote->allow_barekey->decode($movieData);			
 						if (($data -> {'total'}) > 0) {
 							$success = 1;
-							$data = data->{'movies'}[0];
+							$data = $data->{'movies'}[0];
 							
 							print "Successfully connected to movie information for $name\n";
 							$determinedType = "M";
 							my $title;my $year;my $rtid;my $imdbid;my $mpaaRating;my $posterUrl;
-							if ($data->{'title'}) $title=$data->{'title'};
-							if ($data->{'year'}) $year=$data->{'year'};
-							if ($data->{'id'}) $rtid=$data->{'id'};
-							if ($data->{'alternate_ids'}) if ($data->{'alternate_ids'}->{'imdb'}) $imdbid=$info->{'alternate_ids'}->{'imdb'};
-							if ($data->{'mpaa_rating'}) $mpaaRating=$data->{'mpaa_rating'};
+							if ($data->{'title'}) {$title=$data->{'title'};}
+							if ($data->{'year'}) {$year=$data->{'year'};}
+							if ($data->{'id'}) {$rtid=$data->{'id'};}
+							if ($data->{'alternate_ids'}) {if ($data->{'alternate_ids'}->{'imdb'}) {$imdbid=$info->{'alternate_ids'}->{'imdb'};}}
+							if ($data->{'mpaa_rating'}) {$mpaaRating=$data->{'mpaa_rating'};}
 							my $posterProfile;my $posterThumb;my $posterDetailed;my $posterOriginal;
 							if ($data->{'posters'}) {
-								if ($data->{'posters'}->{'detailed'}) $posterDetailed=$data->{'posters'}->{'detailed'};
-								if ($data->{'posters'}->{'original'}) $posterOriginal=$data->{'posters'}->{'original'};
-								if ($data->{'posters'}->{'thumbnail'}) $posterThumb=$data->{'posters'}->{'thumbnail'};
-								if ($data->{'posters'}->{'profile'}) $posterProfile=$data->{'posters'}->{'profile'};
+								if ($data->{'posters'}->{'detailed'})  {$posterDetailed=$data->{'posters'}->{'detailed'};}
+								if ($data->{'posters'}->{'original'})  {$posterOriginal=$data->{'posters'}->{'original'};}
+								if ($data->{'posters'}->{'thumbnail'}) {$posterThumb=$data->{'posters'}->{'thumbnail'};}
+								if ($data->{'posters'}->{'profile'})   {$posterProfile=$data->{'posters'}->{'profile'};}
 								$posterUrl=$rtid."Thumb.jpg";
 								getstore($posterThumb, $localProgram."/images/".$posterUrl);
 								$insertIntoPosterTableString = "Insert Into Poster Values('$fullPath','$title',$year,'$posterDetailed','$posterOriginal','$posterThumb','$posterProfile');";
@@ -212,40 +206,37 @@ sub ScanDirectory {
 							$insertIntoMovieTableString = "Insert Into Movie Values('$fullPath','$title',$year,'$rtid','$imdbid','$mpaaRating');";
 						}
 					}
-					if (not $success) { 	# Failed to find TV and Movie results
+					if (not $success) { 	# Failed to recognize as TV or Movie
 						print "Failed to process video file : $filename\n$success\n";
 						$determinedType = "V";
 					}
 					my $duration;my $width;my $height;my $codec;my $audioRate;my $audioEncoding;my $frameRate;
-					if ($info->{'Duration'}) $duration=$info->{'Duration'};
-					if ($info->{'ImageHeight'}) $width=$info->{'ImageHeight'};
-					if ($info->{'ImageWidth'}) $height=$info->{'ImageWidth'};
-					if ($info->{'VideoCodec'}) $codec=$info->{'VideoCodec'};
-					if ($info->{'AudioSampleRate'}) $audioRate=$info->{'AudioSampleRate'};
-					if ($info->{'Encoding'}) $audioEncoding=$info->{'Encoding'};
-					if ($info->{'FrameRate'}) $frameRate=$info->{'FrameRate'};
+					if ($info->{'Duration'}) {$duration=$info->{'Duration'};}
+					if ($info->{'ImageHeight'}) {$width=$info->{'ImageHeight'};}
+					if ($info->{'ImageWidth'}) {$height=$info->{'ImageWidth'};}
+					if ($info->{'VideoCodec'}) {$codec=$info->{'VideoCodec'};}
+					if ($info->{'AudioSampleRate'}) {$audioRate=$info->{'AudioSampleRate'};}
+					if ($info->{'Encoding'}) {$audioEncoding=$info->{'Encoding'};}
+					if ($info->{'FrameRate'}) {$frameRate=$info->{'FrameRate'};}
 					$insertIntoVideoFileDetailsTableString = "Insert Into VideoFileDetails Values ('$fullPath','$duration',$width,$height,'$codec',$audioRate,'$audioEncoding','$frameRate');";
 				}
 				elsif(exists($audioTypesMap{$ext})) {
-					# my $id3Info = Music::Tag->new($name);
-					# $id3Info->get_tag();
-					# print Dumper $id3Info;
 					print "\nAnalyzing Audio File - $name\n";
 					$name =~ s/\s/%20/g;
 					$name = substr($name,0,rindex($name,$ext));
 					my $songTitle = $info->{"Title"};
-					if (not $songTitle) $songTitle = $name;
+					if (not $songTitle) {$songTitle = $name;}
 					my $songArtist = $info->{"Artist"};
 					my $songAlbum = $info->{"Album"};
 					print "Title,Artist,Album",$songTitle, $songArtist, $songAlbum;
 
-					if ($songAlbum =~ /\Q$songTitle/) {$album=""};
+					if ($songAlbum =~ /\Q$songTitle/) {$songAlbum="";}
 					$songTitle =~ s/%20|-|\s+/ /g;
 					$songTitle =~ s/&/%26/g;
 					my $queryUrl = "http://musicbrainz.org/ws/2/recording/?limit=1&query=";
-					my $queryUrl += "recording:\"$songTitle\"";
-					if ($songArtist) $queryUrl+= " AND artist:\"songArtist\"";
-					if ($songAlbum) $queryUrl+= " AND album:\"songAlbum\"";
+					$queryUrl .= "recording:\"$songTitle\"";
+					if ($songArtist) {$queryUrl.= " AND artist:\"songArtist\"";}
+					if ($songAlbum) {$queryUrl.= " AND album:\"songAlbum\"";}
 					print "Fetching data for file \"$songTitle\" to url \"$queryUrl\" :\n";
 
 					my $request = new HTTP::Request('GET', $queryUrl); 
@@ -254,17 +245,16 @@ sub ScanDirectory {
 				  
 					my $data = $xs1->XMLin($musicData);
 					if ($data->{'recording-list'}->{'count'} > 0) {
-						print Dumper $data->{'recording-list'}->{'recording'};
 						$data = $data->{'recording-list'}->{'recording'};
 						
 						my $recordingTitle = $data->{'title'};
 						my $recordingId = $data->{'id'};
 						
 						my $artist; my $artistName; my $artistId;
-						if($data->{'artist-credit'}) if ($data->{'artist-credit'}->{'name-credit'}) if ($data->{'artist-credit'}->{'name-credit'}->{'artist'}) $artist=$data->{'artist-credit'}->{'name-credit'}->{'artist'};						
+						if($data->{'artist-credit'}) {if ($data->{'artist-credit'}->{'name-credit'}) {if ($data->{'artist-credit'}->{'name-credit'}->{'artist'}) {$artist=$data->{'artist-credit'}->{'name-credit'}->{'artist'};}}}						
 						if($artist) {
-							if($artist->{'name'}) $artistName = $artist->{'name'};
-							if($artist->{'id'})   $artistId   = $artist->{'id'};
+							if($artist->{'name'}) {$artistName = $artist->{'name'};}
+							if($artist->{'id'})   {$artistId   = $artist->{'id'};}
 						}
 						
 						my $release = $data-> {'release-list'}->{'release'};
@@ -273,34 +263,33 @@ sub ScanDirectory {
 						my $releaseId = $release->{'id'};
 						my $releaseTrack = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'number'};
 						my $releaseTracks = $release->{'medium-list'}->{'track-count'};
-						# my $releaseTrackTitle = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'title'};
 						my $releaseType = $release->{'id'};
 						$insertIntoSongTableString = "Insert into Song Values('$recordingTitle','$artistName','$releaseDate',
-														'$fullPath','$releaseTitle','$releaseTrack','$genre');";
+														'$fullPath','$releaseTitle','$releaseTrack');";
 						$determinedType = "S"; # If song
 					}
 					else {
 						$determinedType = "A"; # If audio
 					}
 					my $bitRate;my $audioLayer;my $channelMode;my $sampleRate;my $duration;
-					if ($info->{'AudioBitrate'}) $bitRate=$info->{'AudioBitrate'};
-					if ($info->{'AudioLayer'}) $audioLayer=$info->{'AudioLayer'};
-					if ($info->{'ChannelMode'}) $channelMode=$info->{'ChannelMode'};
-					if ($info->{'SampleRate'}) $sampleRate=$info->{'SampleRate'};
-					if ($info->{'Duration'}) $duration=$info->{'Duration'};
+					if ($info->{'AudioBitrate'}) {$bitRate=$info->{'AudioBitrate'};}
+					if ($info->{'AudioLayer'}) {$audioLayer=$info->{'AudioLayer'};}
+					if ($info->{'ChannelMode'}) {$channelMode=$info->{'ChannelMode'};}
+					if ($info->{'SampleRate'}) {$sampleRate=$info->{'SampleRate'};}
+					if ($info->{'Duration'}) {$duration=$info->{'Duration'};}
 					$insertIntoAudioFileDetailsTableString = "Insert Into AudioFileDetails Values ('$fullPath','$bitRate','$audioLayer','$channelMode',$sampleRate,'$duration');";
 				
 				}
 				elsif(exists($imageTypesMap{$ext})) {
 					print "\nAnalyzing Image File - $name\n";
 					my $interlace;my $imageHeight;my $imageWidth;my $imageSize;my $colorType;my $bitDepth;my $gamma;
-					if ($info->{'Interlace'}) $interlace=$info->{'Interlace'};
-					if ($info->{'ImageHeight'}) $imageHeight=$info->{'ImageHeight'};
-					if ($info->{'ImageWidth'}) $imageWidth=$info->{'ImageWidth'};
-					if ($info->{'ImageSize'}) $imageSize=$info->{'ImageSize'};
-					if ($info->{'ColorType'}) $colorType=$info->{'ColorType'};
-					if ($info->{'BitDepth'}) $bitDepth=$info->{'BitDepth'};
-					if ($info->{'Gamma'}) $gamma=$info->{'Gamma'};
+					if ($info->{'Interlace'}) {$interlace=$info->{'Interlace'};}
+					if ($info->{'ImageHeight'}) {$imageHeight=$info->{'ImageHeight'};}
+					if ($info->{'ImageWidth'}) {$imageWidth=$info->{'ImageWidth'};}
+					if ($info->{'ImageSize'}) {$imageSize=$info->{'ImageSize'};}
+					if ($info->{'ColorType'}) {$colorType=$info->{'ColorType'};}
+					if ($info->{'BitDepth'}) {$bitDepth=$info->{'BitDepth'};}
+					if ($info->{'Gamma'}) {$gamma=$info->{'Gamma'};}
 					$determinedType = "I";
 					$insertIntoImageTableString = "Insert Into Image Values ('$fullPath','$interlace',$imageHeight,$imageWidth,'$imageSize','$colorType','$bitDepth','$gamma');";
 				}
@@ -309,9 +298,20 @@ sub ScanDirectory {
 				print "Found unmatched file:        $name in $workdir!\n";
 			}
 			$insertIntoFileTableString = "Insert into File ('$fullPath','$name',
-			'$determinedType','".$info->{'filesize'}."','$ext','$filenameExt');");
-			my $insertIntoOwnsTableString = "Insert into Owns ('$fullPath','$userName',
-			0,'',False,False,-1)";
+			'$determinedType','".$info->{'filesize'}."','$ext','$filenameExt');";
+			# my $insertIntoOwnsTableString = "Insert into Owns ('$fullPath','$userName',
+			# 0,'',False,False,-1)";
+			
+			print SQL "-- Submit file $fullPath\n";
+			if ($insertIntoFileTableString) {print SQL $insertIntoFileTableString."\n";}
+			if ($insertIntoImageTableString) {print SQL $insertIntoImageTableString."\n";}
+			if ($insertIntoMovieTableString) {print SQL $insertIntoMovieTableString."\n";}
+			if ($insertIntoSongTableString) {print SQL $insertIntoSongTableString."\n";}
+			if ($insertIntoTvEpisodeTableString) {print SQL $insertIntoTvEpisodeTableString."\n";}
+			if ($insertIntoAudioFileDetailsTableString) {print SQL $insertIntoAudioFileDetailsTableString."\n";}
+			if ($insertIntoVideoFileDetailsTableString) {print SQL $insertIntoVideoFileDetailsTableString."\n";}
+			if ($insertIntoPosterTableString) {print SQL $insertIntoPosterTableString."\n";}
+			print SQL "\n\n";
 		}
 		else {				# Is the given name something else?
 			print "Found some unknown file:     $name\n";
@@ -321,3 +321,4 @@ sub ScanDirectory {
 	chdir("..") or die "Unable to change to dir $startdir:$!\n"; 
 }
  
+ close (SQL);
