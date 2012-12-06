@@ -12,7 +12,7 @@ use Data::Dumper;
 use IMDB::Film;
 use WebService::TVDB;
 use XML::Simple;
-use DBI;
+# use DBI;
 
 open (SQL, '>>sql.sql');
 
