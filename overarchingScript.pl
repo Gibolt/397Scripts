@@ -51,7 +51,7 @@ sub ScanDirectory {
 	my $workdir = shift; 
 	my $parentFolder = shift;
 	chdir($workdir) or die "Unable to enter dir $workdir:$!\n";
-	my ($startdir) = &cwd; # keep track of where we began 
+	my $startdir = &cwd; # keep track of where we began 
 	print "Entered directory: $workdir\n";
 
 	opendir(DIR, ".") or die "Unable to open $workdir:$!\n";
@@ -81,7 +81,8 @@ sub ScanDirectory {
 				$filenameExt = lc($1);
 				if (not $ext) {$ext = lc($1);}
 			}
-			my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
+			# my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
+			my $fullPath = $startdir.'/'.$name;
 			$name = substr($name,0,rindex($name,$ext)-1);
 			my $filename = $name =~ s/[\s\.\_\-\[\]\\\/]+/ /g;
 			my $insertIntoFileTableString;
@@ -155,15 +156,17 @@ sub ScanDirectory {
 								}
 							}
 							my $episodeName;my $episodeId;my $episodeRating;my $episodeOverview;my $episodeAired;my $episodeImage;
-							if ($info->{'EpisodeName'}) {$episodeName=$episodeInfo->{'EpisodeName'};}
-							if ($info->{'id'}) {$episodeId=$episodeInfo->{'id'};}
-							if ($info->{'Rating'}) {$episodeRating=$episodeInfo->{'Rating'};}
-							if ($info->{'Overview'}) {$episodeOverview=$episodeInfo->{'Overview'};}
-							if ($info->{'FirstAired'}) {$episodeAired=$episodeInfo->{'FirstAired'};}
-							if ($info->{'filename'}) {
+							if ($episodeInfo->{'EpisodeName'}) {$episodeName=$episodeInfo->{'EpisodeName'};}
+							if ($episodeInfo->{'id'}) {$episodeId=$episodeInfo->{'id'};}
+							if ($episodeInfo->{'Rating'}) {$episodeRating=$episodeInfo->{'Rating'};}
+							if ($episodeInfo->{'Overview'}) {$episodeOverview=$episodeInfo->{'Overview'};}
+							if ($episodeInfo->{'FirstAired'}) {$episodeAired=$episodeInfo->{'FirstAired'};}
+							if ($episodeInfo->{'filename'}) {
 								$episodeImage=$episodeInfo->{'filename'};
 								getstore("http://thetvdb.com/banners/".$episodeImage, $localProgram."/images/$episodeId"."Clip.jpg");
 							}
+							$episodeOverview =~ s/\'/\\'/g;
+							$episodeName =~ s/\'/\\'/g;
 							
 							$insertIntoTvEpisodeTableString = "Insert into TvEpisode Values('$fullPath','$seasonNum','$episodeNum',
 									'$episodeId','$episodeName','$episodeRating','$episodeAired','$episodeOverview','$episodeImage');";
@@ -222,8 +225,6 @@ sub ScanDirectory {
 				}
 				elsif(exists($audioTypesMap{$ext})) {
 					print "\nAnalyzing Audio File - $name\n";
-					$name =~ s/\s/%20/g;
-					$name = substr($name,0,rindex($name,$ext));
 					my $songTitle = $info->{"Title"};
 					if (not $songTitle) {$songTitle = $name;}
 					my $songArtist = $info->{"Artist"};
