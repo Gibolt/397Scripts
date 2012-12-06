@@ -24,10 +24,11 @@ my $rtApiKey = "rfbnqr2xpkahkypty6m6r3ee";
 my $tvdbApiKey = '064C9518B1E8731B';
 my $ua = new LWP::UserAgent;
 $ua->timeout(120); 
-
+my $localProgram;
 
 if (1>=$#ARGV+1) {
 	chdir($ARGV[0]);
+	$localProgram = $ARGV[1];
 	my $currentDir= $ARGV =~ /\/?([^\/]*)\/([^\/]*)$/;
 	&ScanDirectory($ARGV[0]);
 }
@@ -75,7 +76,11 @@ sub ScanDirectory {
 			my $fullPath = $startdir.'/'.$workdir.'/'.$name;  # TODO: Not currently used. Will be for unique database id
 			$name = substr($name,0,rindex($name,$ext)-1);
 			my $filename = $name =~ s/[\s\.\_\-\[\]\\\/]+/ /g;
+			my $insertIntoFileTableString;
 			my $insertIntoImageTableString;
+			my $insertIntoMovieTableString;
+			my $insertIntoSongTableString;
+			my $insertIntoTvEpisodeTableString;
 			my $insertIntoAudioFileDetailsTableString;
 			my $insertIntoVideoFileDetailsTableString;
 			my $insertIntoMovieDetailsTableString;
@@ -153,20 +158,20 @@ sub ScanDirectory {
 									last;
 								}
 							}
-							my $episodeName = $episodeInfo->{'EpisodeName'};
-							my $episodeId = $episodeInfo->{'id'};
-							my $episodeRating = $episodeInfo->{'Rating'};
-							my $episodeOverview = $episodeInfo->{'Overview'};
-							my $episodeAired = $episodeInfo->{'FirstAired'};
-							my $episodeImage = $episodeInfo->{'filename'};
+							my $episodeName;my $episodeId;my $episodeRating;my $episodeOverview;my $episodeAired;my $episodeImage;
+							if ($info->{'EpisodeName'}) $episodeName=$episodeInfo->{'EpisodeName'};
+							if ($info->{'id'}) $episodeId=$episodeInfo->{'id'};
+							if ($info->{'Rating'}) $episodeRating=$episodeInfo->{'Rating'};
+							if ($info->{'Overview'}) $episodeOverview=$episodeInfo->{'Overview'};
+							if ($info->{'FirstAired'}) $episodeAired=$episodeInfo->{'FirstAired'};
+							if ($info->{'filename'}) {
+								$episodeImage=$episodeInfo->{'filename'};
+								getstore("http://thetvdb.com/banners/".$episodeImage, $localProgram."/images/$episodeId".$Clip.".jpg");
+							}
 							
+							$insertIntoTvEpisodeTableString = "Insert into TvEpisode Values('$fullPath','$seasonNum','$episodeNum',
+									'$episodeId','$episodeName','$episodeRating','$episodeAired','$episodeOverview','$episodeImage');";
 							print "Show:$showName+Episode:$episodeName+S$seasonNum E$episodeNum\n";
-							# for my $episode (@{ $series->episodes }){
-							  # # $episode is a WebService::TVDB::Episode
-							  # CORE::say $episode->Overview;
-							  # CORE::say $episode->FirstAired;
-							# }
-							# CoverArt is 'http://thetvdb.com/banners/'.$series->{'filename'};
 							$determinedType = "T";
 						}
 					}
@@ -177,30 +182,35 @@ sub ScanDirectory {
 						my $mainUrl = "http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=".$rtApiKey;
 						my $json_url = $mainUrl."&q="."$name"."&page_limit=1";
 						my $response = $ua->request(new HTTP::Request('GET', $json_url));
-						# my $request = new HTTP::Request('GET', $json_url); 
-						# my $response = $ua->request($request);
 						my $movieData = $response->content();
 					  
 						my $json = new JSON;
 						my $data = $json->allow_nonref->utf8->relaxed->escape_slash->loose->allow_singlequote->allow_barekey->decode($movieData);
-						print "$json_url\n";
-						# print Dumper $data;				
+						print "$json_url\n";				
 						if (($data -> {'total'}) > 0) {
 							$success = 1;
 							$data = data->{'movies'}[0];
 							
-							# print $data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'};
-							# print "\n";
-								# Fetch movie posters
-							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'profile'}, "profile.jpg");
-							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'detailed'}, "detailed.jpg");
-							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'thumbnail'}, "thumbnail.jpg");
-							# getstore($data -> {'movies'}[0] -> {'posters'} -> {'original'}, "original.jpg");
-							# fetch_imdb_page($data -> {'movies'}[0] -> {'alternate_ids'} -> {'imdb'}); 
 							print "Successfully connected to movie information for $name\n";
 							$determinedType = "M";
+							my $title;my $year;my $rtid;my $imdbid;my $mpaaRating;my $posterUrl;
+							if ($data->{'title'}) $title=$data->{'title'};
+							if ($data->{'year'}) $year=$data->{'year'};
+							if ($data->{'id'}) $rtid=$data->{'id'};
+							if ($data->{'alternate_ids'}) if ($data->{'alternate_ids'}->{'imdb'}) $imdbid=$info->{'alternate_ids'}->{'imdb'};
+							if ($data->{'mpaa_rating'}) $mpaaRating=$data->{'mpaa_rating'};
+							my $posterProfile;my $posterThumb;my $posterDetailed;my $posterOriginal;
+							if ($data->{'posters'}) {
+								if ($data->{'posters'}->{'detailed'}) $posterDetailed=$data->{'posters'}->{'detailed'};
+								if ($data->{'posters'}->{'original'}) $posterOriginal=$data->{'posters'}->{'original'};
+								if ($data->{'posters'}->{'thumbnail'}) $posterThumb=$data->{'posters'}->{'thumbnail'};
+								if ($data->{'posters'}->{'profile'}) $posterProfile=$data->{'posters'}->{'profile'};
+								$posterUrl=$rtid."Thumb.jpg";
+								getstore($posterThumb, $localProgram."/images/".$posterUrl);
+								$insertIntoPosterTableString = "Insert Into Poster Values('$fullPath','$title',$year,'$posterDetailed','$posterOriginal','$posterThumb','$posterProfile');";
+							}
+							$insertIntoMovieTableString = "Insert Into Movie Values('$fullPath','$title',$year,'$rtid','$imdbid','$mpaaRating');";
 						}
-
 					}
 					if (not $success) { 	# Failed to find TV and Movie results
 						print "Failed to process video file : $filename\n$success\n";
@@ -265,7 +275,8 @@ sub ScanDirectory {
 						my $releaseTracks = $release->{'medium-list'}->{'track-count'};
 						# my $releaseTrackTitle = $release->{'medium-list'}->{'medium'}->{'track-list'}->{'track'}->{'title'};
 						my $releaseType = $release->{'id'};
-						
+						$insertIntoSongTableString = "Insert into Song Values('$recordingTitle','$artistName','$releaseDate',
+														'$fullPath','$releaseTitle','$releaseTrack','$genre');";
 						$determinedType = "S"; # If song
 					}
 					else {
@@ -297,7 +308,7 @@ sub ScanDirectory {
 			else {
 				print "Found unmatched file:        $name in $workdir!\n";
 			}
-			my $insertIntoFileTableString = "Insert into File ('$fullPath','$name',
+			$insertIntoFileTableString = "Insert into File ('$fullPath','$name',
 			'$determinedType','".$info->{'filesize'}."','$ext','$filenameExt');");
 			my $insertIntoOwnsTableString = "Insert into Owns ('$fullPath','$userName',
 			0,'',False,False,-1)";
