@@ -36,10 +36,18 @@ my $db_pass  = "";
 my $dsn_name = 'dbi:ODBC:data\\MediaData';
 
 if ($#ARGV+1>=1) {
-	chdir($ARGV[1]);
 	$localProgram = $ARGV[0];
-	my $currentDir= $ARGV[1] =~ /\/?([^\/]*)\/([^\/]*)$/;
-	&ScanDirectory($ARGV[1]);
+	if (-d $ARGV[1]){ 		# Is the given name a directory?
+		chdir($ARGV[1]);
+		&ScanDirectory($ARGV[1]); 
+	}
+	else {	# Assume it is a file
+		if ($ARGV[1] =~ /^(.*)(\\|\/)([^\/\\]+)$/) {
+			chdir($1);
+			&ScanDirectory($3);
+		}
+	}
+	# &ScanDirectory($ARGV[1]);
 }
 else {
 	chdir(".");
@@ -247,6 +255,7 @@ sub ScanDirectory {
 						$data = $data->{'recording-list'}->{'recording'};
 						
 						my $recordingTitle = $data->{'title'};
+						$recordingTitle =~ s/\'/\\'/g;
 						my $recordingId = $data->{'id'};
 						
 						my $artist; my $artistName; my $artistId;
@@ -296,7 +305,7 @@ sub ScanDirectory {
 			else {
 				print "Found unmatched file:        $name in $workdir!\n";
 			}
-			$insertIntoFileTableString = "Insert into File ('$fullPath','$name',
+			$insertIntoFileTableString = "Insert into File Values('$fullPath','$name',
 			'$determinedType','".$info->{'filesize'}."','$ext','$filenameExt');";
 			# my $insertIntoOwnsTableString = "Insert into Owns ('$fullPath','$userName',
 			# 0,'',False,False,-1)";
